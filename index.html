@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Digit Analytics Hub</title>
+    <style>
+        :root {
+            --bg-main: #0B0E14;
+            --bg-card: #151A24;
+            --border: #262F41;
+            --accent: #00E676;
+            --accent-glow: rgba(0, 230, 118, 0.15);
+            --text-primary: #F5F7FA;
+            --text-secondary: #8A99AD;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body { background: var(--bg-main); color: var(--text-primary); padding: 24px; min-height: 100vh; }
+        .dashboard { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 1fr 3fr; gap: 24px; }
+        
+        .control-panel, .display-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+        h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px; color: var(--text-primary); }
+        
+        .input-group { margin-bottom: 16px; }
+        label { display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        select, input { width: 100%; padding: 12px; background: var(--bg-main); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.95rem; outline: none; }
+        select:focus, input:focus { border-color: var(--accent); }
+        
+        button { width: 100%; padding: 14px; background: var(--accent); border: none; border-radius: 6px; color: var(--bg-main); font-weight: 700; font-size: 1rem; cursor: pointer; transition: all 0.2s ease; margin-top: 10px; }
+        button:hover { opacity: 0.9; box-shadow: 0 0 15px var(--accent-glow); }
+        button.disconnect { background: #FF5252; color: white; }
+
+        .metric-row { display: flex; justify-content: space-between; align-items: center; background: var(--bg-main); padding: 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 24px; }
+        .ticker-val { font-family: monospace; font-size: 2rem; font-weight: 700; color: var(--accent); }
+        .last-digit { font-size: 2.5rem; font-weight: 800; background: var(--border); padding: 0 16px; border-radius: 6px; margin-left: 10px; color: #FFF; }
+
+        .histogram-container { display: grid; grid-template-columns: repeat(10, 1fr); gap: 12px; height: 260px; align-items: flex-end; padding: 20px 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+        .bar-wrapper { display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
+        .bar { width: 100%; background: linear-gradient(180deg, var(--border) 0%, rgba(38,47,65,0.4) 100%); border-radius: 4px 4px 0 0; transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1); min-height: 4px; position: relative; }
+        .bar.alert-state { background: linear-gradient(180deg, var(--accent) 0%, rgba(0, 230, 118, 0.2) 100%); }
+        .bar-pct { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 6px; font-family: monospace; }
+        .bar-label { font-size: 1rem; font-weight: 700; margin-top: 8px; color: var(--text-primary); }
+
+        .logs { background: var(--bg-main); border: 1px solid var(--border); border-radius: 6px; height: 140px; overflow-y: auto; padding: 12px; font-family: monospace; font-size: 0.85rem; color: var(--text-secondary); }
+        .log-entry { margin-bottom: 4px; border-left: 2px solid var(--accent); padding-left: 6px; color: var(--text-primary); }
+    </style>
+</head>
+<body>
+
+<div class="dashboard">
+    <!-- Configuration Column -->
+    <div class="control-panel">
+        <h2>Control Console</h2>
+        <div class="input-group">
+            <label>Synthetic Volatility Asset</label>
+            <select id="assetSelect">
+                <option value="R_10">Volatility 10 Index</option>
+                <option value="R_25">Volatility 25 Index</option>
+                <option value="R_50">Volatility 50 Index</option>
+                <option value="R_75" selected>Volatility 75 Index</option>
+                <option value="R_100">Volatility 100 Index</option>
+                <option value="1HZ10V">Volatility 10 (1s) Index</option>
+                <option value="1HZ75V">Volatility 75 (1s) Index</option>
+            </select>
+        </div>
+        <div class="input-group">
+            <label>Analytical Overlay Strategy</label>
+            <select id="strategySelect">
+                <option value="matches_differs">Matches / Differs Over-Density</option>
+                <option value="even_odd">Even / Odd Volatility Swell</option>
+            </select>
+        </div>
+        <div class="input-group">
+            <label>Alert Trigger Floor Threshold (%)</label>
+            <input type="number" id="thresholdInput" value="15" min="1" max="99">
+        </div>
+        <button id="actionBtn" onclick="togglePipeline()">Launch WebSocket Pipeline</button>
+    </div>
+
+    <!-- Live Telemetry Presentation Column -->
+    <div class="display-panel">
+        <div class="metric-row">
+            <div>
+                <label>Streaming Volatility Market Feed</label>
+                <div class="ticker-val" id="priceDisplay">0.0000</div>
+            </div>
+            <div style="display: flex; align-items: center;">
+                <label>Active Last Digit</label>
+                <div class="last-digit" id="digitDisplay">-</div>
+            </div>
+        </div>
+
+        <h2>Real-Time Digit Density Distribution (%)</h2>
+        <div class="histogram-container" id="histogramContainer">
+            <!-- Programmatically rendered digits 0-9 bars -->
+        </div>
+
+        <h2>System Telemetry Signals & Webhook Routing Logs</h2>
+        <div class="logs" id="logConsole">
+            <div style="color: var(--text-secondary);">System idle. Awaiting WebSocket connection activation pipeline.</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let wsClient = null;
+    let ticksHistory = [];
+    const maxTicksCache = 100;
+    let digitCounts = Array(10).fill(0);
+
+    // Bootstrap structure layout for chart items
+    const container = document.getElementById('histogramContainer');
+    for (let i = 0; i < 10; i++) {
+        container.innerHTML += `
+            <div class="bar-wrapper">
+                <span class="bar-pct" id="pct-${i}">0.0%</span>
+                <div class="bar" id="bar-${i}"></div>
+                <span class="bar-label">${i}</span>
+            </div>`;
+    }
+
+    function writeLog(text, isAlert = false) {
+        const consoleEl = document.getElementById('logConsole');
+        const timestamp = new Date().toISOString().slice(11, 19);
+        const logHtml = `<div class="${isAlert ? 'log-entry' : ''}">[${timestamp}] ${text}</div>`;
+        consoleEl.innerHTML = logHtml + consoleEl.innerHTML;
+    }
+
+    function togglePipeline() {
+        const btn = document.getElementById('actionBtn');
+        if (wsClient && wsClient.readyState === WebSocket.OPEN) {
+            disconnectPipeline();
+        } else {
+            connectPipeline();
+        }
+    }
+
+    function connectPipeline() {
+        const asset = document.getElementById('assetSelect').value;
+        const btn = document.getElementById('actionBtn');
+        
+        ticksHistory = [];
+        digitCounts.fill(0);
+        
+        wsClient = new WebSocket('wss://://derivws.com');
+        writeLog(`Initializing handshake link with Deriv edge servers...`);
+
+        wsClient.onopen = () => {
+            writeLog(`Handshake completed. Multiplexing data channel for asset sub-key: ${asset}`);
+            wsClient.send(JSON.stringify({ ticks: asset }));
+            btn.textContent = "Teardown Streaming Link";
+            btn.className = "disconnect";
+        };
+
+        wsClient.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.tick) {
+                processIncomingTick(data.tick);
+            }
+        };
+
+        wsClient.onerror = (err) => { writeLog(`API Transport Pipeline Fault: Network failure.`); };
+        wsClient.onclose = () => { disconnectPipeline(); };
+    }
+
+    function disconnectPipeline() {
+        if (wsClient) {
+            wsClient.close();
+            wsClient = null;
+        }
+        const btn = document.getElementById('actionBtn');
+        btn.textContent = "Launch WebSocket Pipeline";
+        btn.className = "";
+        writeLog(`WebSocket operational loop gracefully torn down.`);
+    }
+
+    function processIncomingTick(tick) {
+        const rawPriceStr = tick.quote.toFixed(tick.pip_size);
+        const lastDigit = parseInt(rawPriceStr.slice(-1));
+
+        document.getElementById('priceDisplay').textContent = rawPriceStr;
+        document.getElementById('digitDisplay').textContent = lastDigit;
+
+        ticksHistory.push(lastDigit);
+        digitCounts[lastDigit]++;
+
+        if (ticksHistory.length > maxTicksCache) {
+            const poppedDigit = ticksHistory.shift();
+            digitCounts[poppedDigit]--;
+        }
+
+        evaluateMetrics();
+    }
+
+    function evaluateMetrics() {
+        const currentSampleTotal = ticksHistory.length;
+        if (currentSampleTotal === 0) return;
+
+        const strategy = document.getElementById('strategySelect').value;
+        const alertThreshold = parseFloat(document.getElementById('thresholdInput').value);
+
+        for (let i = 0; i < 10; i++) {
+            const rawPct = (digitCounts[i] / currentSampleTotal) * 100;
+            document.getElementById(`pct-${i}`).textContent = `${rawPct.toFixed(1)}%`;
+            
+            const bar = document.getElementById(`bar-${i}`);
+            bar.style.height = `${Math.min(rawPct * 4, 100)}%`;
+
+            if (strategy === 'matches_differs' && rawPct >= alertThreshold) {
