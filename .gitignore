@@ -1,0 +1,9 @@
+# Block local dependency installations from tracking
+node_modules/
+
+# Hide local environmental secrets and credentials
+.env
+
+# Block tracking of operating system cache dumps
+.DS_Store
+Thumbs.db
